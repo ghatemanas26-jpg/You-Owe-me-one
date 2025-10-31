@@ -51,16 +51,6 @@
       import { GoogleGenAI, Type } from "@google/genai";
       
       // --- START: services/geminiService.ts ---
-      if (!process.env.API_KEY) {
-        const rootDiv = document.getElementById('root');
-        if (rootDiv) {
-            rootDiv.innerHTML = `<div style="color: #F1F5F9; padding: 2rem; text-align: center; font-family: sans-serif;">
-            <h2 style="font-size: 1.5rem; margin-bottom: 1rem;">Configuration Error</h2>
-            <p>API_KEY is not available. This is required to run the application.</p>
-            </div>`;
-        }
-        throw new Error("API_KEY environment variable not set");
-      }
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       async function generateYouTubeContent(topic) {
@@ -386,7 +376,7 @@
                 {showInterstitial && (
                     <div className="flex flex-col items-center justify-center text-center p-8">
                         <h2 className="text-3xl font-bold text-indigo-accent animate-pulse">
-                            Be Thankful to Lord Yogesh
+                            Crafting your content...
                         </h2>
                     </div>
                 )}
@@ -432,8 +422,8 @@
             </main>
             
             <footer className="w-full text-center mt-16 py-4">
-                <p className="text-gray-blue font-bold text-2xl animate-pulse bg-clip-text text-transparent bg-gradient-to-r from-indigo-accent via-green-cta to-indigo-accent">
-                Made By Your Dad, You Little Bitch!!!
+                <p className="text-gray-blue">
+                  Powered by Google Gemini
                 </p>
             </footer>
             </div>
