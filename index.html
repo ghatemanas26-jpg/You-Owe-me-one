@@ -46,14 +46,14 @@
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
-      import React, { useState, useCallback, useRef } from 'react';
+      import React, { useState, useCallback, useRef, useEffect } from 'react';
       import ReactDOM from 'react-dom/client';
       import { GoogleGenAI, Type } from "@google/genai";
       
       // --- START: services/geminiService.ts ---
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       async function generateYouTubeContent(topic) {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         try {
             const prompt = `
             For a YouTube video about "${topic}", generate a JSON object with the following structure:
@@ -114,6 +114,7 @@
       }
 
       async function generateThumbnail(prompt) {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         try {
             const response = await ai.models.generateImages({
                 model: 'imagen-4.0-generate-001',
@@ -140,11 +141,11 @@
       // --- END: services/geminiService.ts ---
 
       // --- START: components/Loader.tsx ---
-      const Loader = () => {
+      const Loader = ({text = "Generating content, please wait..."}) => {
         return (
             <div className="flex flex-col items-center justify-center space-y-4">
             <div className="w-16 h-16 border-4 border-dashed rounded-full animate-spin border-indigo-accent"></div>
-            <p className="text-gray-blue">Generating content, please wait...</p>
+            <p className="text-gray-blue">{text}</p>
             </div>
         );
       };
@@ -284,6 +285,25 @@
         );
       };
 
+      const ApiKeyScreen = ({ onKeySelect }) => {
+        return (
+            <div className="w-full max-w-md mx-auto flex flex-col items-center justify-center text-center p-8 bg-slate-800/50 rounded-lg shadow-lg">
+                <h2 className="text-2xl font-bold text-off-white mb-4">API Key Required</h2>
+                <p className="text-gray-blue mb-6">
+                    To use the YouTube SEO Content Generator, please select an API key. For more information on billing, please visit our{' '}
+                    <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="text-indigo-accent hover:underline">
+                        billing documentation
+                    </a>.
+                </p>
+                <button
+                    onClick={onKeySelect}
+                    className="bg-green-cta text-white font-bold px-8 py-4 rounded-full shadow-lg hover:bg-green-500 transition-all duration-300 transform hover:scale-105"
+                >
+                    Select API Key to Continue
+                </button>
+            </div>
+        );
+      };
 
       const App = () => {
         const [topic, setTopic] = useState('');
@@ -292,7 +312,36 @@
         const [isLoading, setIsLoading] = useState(false);
         const [showInterstitial, setShowInterstitial] = useState(false);
         const [error, setError] = useState(null);
+        const [isKeyReady, setIsKeyReady] = useState(false);
+        const [isKeyLoading, setIsKeyLoading] = useState(true);
         const resultsRef = useRef(null);
+
+        useEffect(() => {
+          const checkApiKey = async () => {
+            try {
+              if (window.aistudio && await window.aistudio.hasSelectedApiKey()) {
+                setIsKeyReady(true);
+              }
+            } catch (e) {
+              console.error("Error checking for API key:", e);
+            } finally {
+              setIsKeyLoading(false);
+            }
+          };
+          checkApiKey();
+        }, []);
+
+        const handleSelectKey = async () => {
+          try {
+            if (window.aistudio) {
+              await window.aistudio.openSelectKey();
+              setIsKeyReady(true);
+            }
+          } catch(e) {
+             console.error("Error opening key selection:", e);
+             setError("Could not open API key selection. Please try again.");
+          }
+        };
 
         const handleGenerate = useCallback(async () => {
             if (!topic.trim()) {
@@ -332,100 +381,119 @@
 
 
             } catch (e) {
-            setError(e instanceof Error ? e.message : 'An unknown error occurred.');
-            setIsLoading(false);
+              const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
+              if (errorMessage.includes("API key not valid")) {
+                  setError("Your API Key is invalid. Please select a valid API key to continue.");
+                  setIsKeyReady(false);
+              } else {
+                  setError(errorMessage);
+              }
+              setIsLoading(false);
             }
         }, [topic]);
+        
+        const renderContent = () => {
+          if (isKeyLoading) {
+            return <Loader text="Checking API key status..."/>;
+          }
+          if (!isKeyReady) {
+            return <ApiKeyScreen onKeySelect={handleSelectKey} />;
+          }
+
+          return (
+            <>
+              <h1 className="text-3xl sm:text-5xl font-bold text-center mt-4 bg-clip-text text-transparent bg-gradient-to-r from-off-white to-gray-blue">
+              YouTube SEO Content Generator
+              </h1>
+              <p className="text-gray-blue mt-4 text-center max-w-2xl">
+              Enter your video topic and let AI craft the perfect title, description, tags, and even generate unique thumbnail ideas to boost your channel's visibility.
+              </p>
+
+              <div className="w-full max-w-2xl mt-12">
+              <div className="flex flex-col sm:flex-row gap-4">
+                  <input
+                  type="text"
+                  value={topic}
+                  onChange={(e) => setTopic(e.target.value)}
+                  placeholder="e.g., 'How to bake a sourdough bread'"
+                  className="flex-grow bg-slate-800/50 text-off-white placeholder-gray-blue px-6 py-4 rounded-full border-2 border-transparent focus:border-indigo-accent focus:ring-0 focus:outline-none transition-all duration-300 shadow-lg"
+                  disabled={isLoading}
+                  onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
+                  />
+                  <button
+                  onClick={handleGenerate}
+                  disabled={isLoading}
+                  className="bg-green-cta text-white font-bold px-8 py-4 rounded-full shadow-lg hover:bg-green-500 disabled:bg-gray-500 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-105"
+                  >
+                  {isLoading ? 'Generating...' : 'Generate'}
+                  </button>
+              </div>
+              </div>
+
+              <div ref={resultsRef} className="w-full mt-16 transition-opacity duration-700 ease-in-out">
+              {isLoading && <Loader />}
+              {error && <p className="text-center text-red-400 bg-red-900/50 p-4 rounded-lg">{error}</p>}
+              
+              {showInterstitial && (
+                  <div className="flex flex-col items-center justify-center text-center p-8">
+                      <h2 className="text-3xl font-bold text-indigo-accent animate-pulse">
+                          Crafting your content...
+                      </h2>
+                  </div>
+              )}
+              
+              {generatedContent && !showInterstitial && (
+                  <div className="space-y-8 animate-fade-in">
+                  <div className="bg-slate-800/50 p-6 rounded-lg shadow-lg flex flex-col md:flex-row items-center justify-between gap-6">
+                      <div className="flex-grow">
+                          <h3 className="text-lg font-semibold text-indigo-accent mb-2">Overall SEO Score</h3>
+                          <p className="text-gray-blue">{generatedContent.scoreJustification}</p>
+                      </div>
+                      <SeoScore score={generatedContent.seoScore} />
+                  </div>
+                  
+                  <ResultCard title="Generated Title Options" content={<TitleOptions titles={generatedContent.titles} />} />
+                  <ResultCard title="Keyword Analysis" content={generatedContent.keywordAnalysis} />
+                  <ResultCard title="Generated Description" content={generatedContent.description} />
+                  <ResultCard title="Generated Tags" content={generatedContent.tags} />
+                  
+                  <div>
+                      <h3 className="text-lg font-semibold text-indigo-accent mb-3 text-center">AI-Generated Thumbnails</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                          {thumbnailUrls.map((url, index) => (
+                          <div key={index} className="group relative bg-slate-800/50 p-4 rounded-lg shadow-lg transition-all duration-300 hover:shadow-indigo-accent/20 hover:scale-105">
+                              <img src={url} alt={`Generated thumbnail ${index + 1}`} className="w-full h-auto rounded-md aspect-video object-cover" />
+                              <a
+                              href={url}
+                              download={`thumbnail-${topic.replace(/\s+/g, '-')}-${index + 1}.png`}
+                              className="absolute top-2 right-2 bg-green-cta/80 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                              aria-label="Download thumbnail"
+                              >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                              </svg>
+                              </a>
+                          </div>
+                          ))}
+                      </div>
+                  </div>
+                  </div>
+              )}
+              </div>
+            </>
+          );
+        };
 
         return (
             <div className="min-h-screen bg-navy text-off-white font-sans flex flex-col items-center p-4 sm:p-8 transition-colors duration-500">
-            <main className="w-full max-w-4xl mx-auto flex flex-col items-center pt-8">
-
-                <h1 className="text-3xl sm:text-5xl font-bold text-center mt-4 bg-clip-text text-transparent bg-gradient-to-r from-off-white to-gray-blue">
-                YouTube SEO Content Generator
-                </h1>
-                <p className="text-gray-blue mt-4 text-center max-w-2xl">
-                Enter your video topic and let AI craft the perfect title, description, tags, and even generate unique thumbnail ideas to boost your channel's visibility.
-                </p>
-
-                <div className="w-full max-w-2xl mt-12">
-                <div className="flex flex-col sm:flex-row gap-4">
-                    <input
-                    type="text"
-                    value={topic}
-                    onChange={(e) => setTopic(e.target.value)}
-                    placeholder="e.g., 'How to bake a sourdough bread'"
-                    className="flex-grow bg-slate-800/50 text-off-white placeholder-gray-blue px-6 py-4 rounded-full border-2 border-transparent focus:border-indigo-accent focus:ring-0 focus:outline-none transition-all duration-300 shadow-lg"
-                    disabled={isLoading}
-                    onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
-                    />
-                    <button
-                    onClick={handleGenerate}
-                    disabled={isLoading}
-                    className="bg-green-cta text-white font-bold px-8 py-4 rounded-full shadow-lg hover:bg-green-500 disabled:bg-gray-500 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-105"
-                    >
-                    {isLoading ? 'Generating...' : 'Generate'}
-                    </button>
-                </div>
-                </div>
-
-                <div ref={resultsRef} className="w-full mt-16 transition-opacity duration-700 ease-in-out">
-                {isLoading && <Loader />}
-                {error && <p className="text-center text-red-400 bg-red-900/50 p-4 rounded-lg">{error}</p>}
-                
-                {showInterstitial && (
-                    <div className="flex flex-col items-center justify-center text-center p-8">
-                        <h2 className="text-3xl font-bold text-indigo-accent animate-pulse">
-                            Crafting your content...
-                        </h2>
-                    </div>
-                )}
-                
-                {generatedContent && !showInterstitial && (
-                    <div className="space-y-8 animate-fade-in">
-                    <div className="bg-slate-800/50 p-6 rounded-lg shadow-lg flex flex-col md:flex-row items-center justify-between gap-6">
-                        <div className="flex-grow">
-                            <h3 className="text-lg font-semibold text-indigo-accent mb-2">Overall SEO Score</h3>
-                            <p className="text-gray-blue">{generatedContent.scoreJustification}</p>
-                        </div>
-                        <SeoScore score={generatedContent.seoScore} />
-                    </div>
-                    
-                    <ResultCard title="Generated Title Options" content={<TitleOptions titles={generatedContent.titles} />} />
-                    <ResultCard title="Keyword Analysis" content={generatedContent.keywordAnalysis} />
-                    <ResultCard title="Generated Description" content={generatedContent.description} />
-                    <ResultCard title="Generated Tags" content={generatedContent.tags} />
-                    
-                    <div>
-                        <h3 className="text-lg font-semibold text-indigo-accent mb-3 text-center">AI-Generated Thumbnails</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                            {thumbnailUrls.map((url, index) => (
-                            <div key={index} className="group relative bg-slate-800/50 p-4 rounded-lg shadow-lg transition-all duration-300 hover:shadow-indigo-accent/20 hover:scale-105">
-                                <img src={url} alt={`Generated thumbnail ${index + 1}`} className="w-full h-auto rounded-md aspect-video object-cover" />
-                                <a
-                                href={url}
-                                download={`thumbnail-${topic.replace(/\s+/g, '-')}-${index + 1}.png`}
-                                className="absolute top-2 right-2 bg-green-cta/80 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                                aria-label="Download thumbnail"
-                                >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                </svg>
-                                </a>
-                            </div>
-                            ))}
-                        </div>
-                    </div>
-                    </div>
-                )}
-                </div>
-            </main>
-            
-            <footer className="w-full text-center mt-16 py-4">
-                <p className="text-gray-blue">
-                  Powered by Google Gemini
-                </p>
-            </footer>
+              <main className="w-full max-w-4xl mx-auto flex flex-col items-center pt-8">
+                  {renderContent()}
+              </main>
+              <footer className="w-full text-center mt-16 py-4">
+                  <p className="text-gray-blue">
+                    Powered by Google Gemini
+                  </p>
+              </footer>
             </div>
         );
       };
