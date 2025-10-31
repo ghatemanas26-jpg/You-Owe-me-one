@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import type { YouTubeContent } from '../types';
+import type { YouTubeContent } from '../types.ts';
 
 if (!process.env.API_KEY) {
   throw new Error("API_KEY environment variable not set");

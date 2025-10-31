@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useRef } from 'react';
-import { generateYouTubeContent, generateThumbnail } from './services/geminiService';
-import type { YouTubeContent } from './types';
-import Loader from './components/Loader';
-import ResultCard from './components/ResultCard';
-import SeoScore from './components/SeoScore';
+import { generateYouTubeContent, generateThumbnail } from './services/geminiService.ts';
+import type { YouTubeContent } from './types.ts';
+import Loader from './components/Loader.tsx';
+import ResultCard from './components/ResultCard.tsx';
+import SeoScore from './components/SeoScore.tsx';
 
 const TitleOptions: React.FC<{ titles: string[] }> = ({ titles }) => {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
