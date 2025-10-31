@@ -35,6 +35,416 @@
 </head>
   <body class="bg-navy">
     <div id="root"></div>
-    <script type="text/babel" src="./index.tsx"></script>
+
+    <script type="text/babel" data-type="module">
+      import React, { useState, useCallback, useRef } from 'react';
+      import ReactDOM from 'react-dom/client';
+      import { GoogleGenAI, Type } from "@google/genai";
+      
+      // --- START: services/geminiService.ts ---
+      if (!process.env.API_KEY) {
+        const rootDiv = document.getElementById('root');
+        if (rootDiv) {
+            rootDiv.innerHTML = `<div style="color: #F1F5F9; padding: 2rem; text-align: center; font-family: sans-serif;">
+            <h2 style="font-size: 1.5rem; margin-bottom: 1rem;">Configuration Error</h2>
+            <p>API_KEY is not available. This is required to run the application.</p>
+            </div>`;
+        }
+        throw new Error("API_KEY environment variable not set");
+      }
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      
+      async function generateYouTubeContent(topic) {
+        try {
+            const prompt = `
+            For a YouTube video about "${topic}", generate a JSON object with the following structure:
+            1. "titles": An array of 3 unique, click-worthy, and SEO-optimized titles that are likely to rank high on YouTube search.
+            2. "description": A detailed, SEO-friendly description for the video, including relevant keywords and 3-5 hashtags at the end.
+            3. "tags": An array of 10-15 relevant SEO tags.
+            4. "seoScore": An integer score from 0 to 100 representing the overall SEO potential of the generated content.
+            5. "scoreJustification": A brief, 1-2 sentence explanation for the given SEO score.
+            6. "keywordAnalysis": A short analysis of the main keywords, simulating insights from SEO tools, focusing on search volume, competition, and relevance.
+            `;
+
+            const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    titles: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                    description: 'An array of 3 catchy, SEO-friendly titles for the YouTube video.'
+                    },
+                    description: {
+                    type: Type.STRING,
+                    description: 'A detailed, SEO-friendly description including hashtags.'
+                    },
+                    tags: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                    description: 'An array of 10-15 relevant SEO tags.'
+                    },
+                    seoScore: {
+                        type: Type.INTEGER,
+                        description: 'An integer SEO score from 0 to 100.'
+                    },
+                    scoreJustification: {
+                        type: Type.STRING,
+                        description: 'A brief justification for the SEO score.'
+                    },
+                    keywordAnalysis: {
+                        type: Type.STRING,
+                        description: 'An analysis of the primary keywords.'
+                    }
+                },
+                required: ['titles', 'description', 'tags', 'seoScore', 'scoreJustification', 'keywordAnalysis'],
+                },
+            },
+            });
+
+            const parsedResponse = JSON.parse(response.text);
+            return parsedResponse;
+        } catch (error) {
+            console.error("Error generating YouTube content:", error);
+            throw new Error("Failed to generate text content. Please try again.");
+        }
+      }
+
+      async function generateThumbnail(prompt) {
+        try {
+            const response = await ai.models.generateImages({
+                model: 'imagen-4.0-generate-001',
+                prompt: prompt,
+                config: {
+                numberOfImages: 1,
+                outputMimeType: 'image/png',
+                aspectRatio: '16:9',
+                },
+            });
+            
+            if (response.generatedImages && response.generatedImages.length > 0) {
+            const base64ImageBytes = response.generatedImages[0].image.imageBytes;
+            return `data:image/png;base64,${base64ImageBytes}`;
+            } else {
+            throw new Error("No image was generated.");
+            }
+
+        } catch (error) {
+            console.error("Error generating thumbnail:", error);
+            throw new Error("Failed to generate thumbnail image. Please try again.");
+        }
+      }
+      // --- END: services/geminiService.ts ---
+
+      // --- START: components/Loader.tsx ---
+      const Loader = () => {
+        return (
+            <div className="flex flex-col items-center justify-center space-y-4">
+            <div className="w-16 h-16 border-4 border-dashed rounded-full animate-spin border-indigo-accent"></div>
+            <p className="text-gray-blue">Generating content, please wait...</p>
+            </div>
+        );
+      };
+      // --- END: components/Loader.tsx ---
+
+      // --- START: components/SeoScore.tsx ---
+      const SeoScore = ({ score }) => {
+        const size = 120;
+        const strokeWidth = 10;
+        const center = size / 2;
+        const radius = center - strokeWidth / 2;
+        const circumference = 2 * Math.PI * radius;
+
+        const offset = circumference - (score / 100) * circumference;
+
+        let colorClass = 'stroke-green-cta';
+        if (score < 75) colorClass = 'stroke-yellow-400';
+        if (score < 40) colorClass = 'stroke-red-500';
+
+        return (
+            <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
+            <svg className="transform -rotate-90" width={size} height={size}>
+                <circle
+                className="stroke-gray-blue/20"
+                strokeWidth={strokeWidth}
+                stroke="currentColor"
+                fill="transparent"
+                r={radius}
+                cx={center}
+                cy={center}
+                />
+                <circle
+                className={`transition-all duration-1000 ease-out ${colorClass}`}
+                strokeWidth={strokeWidth}
+                strokeDasharray={circumference}
+                strokeDashoffset={offset}
+                strokeLinecap="round"
+                stroke="currentColor"
+                fill="transparent"
+                r={radius}
+                cx={center}
+                cy={center}
+                />
+            </svg>
+            <span className="absolute text-3xl font-bold text-off-white">{score}</span>
+            </div>
+        );
+      };
+      // --- END: components/SeoScore.tsx ---
+
+      // --- START: components/ResultCard.tsx ---
+      const ResultCard = ({ title, content }) => {
+        const [copied, setCopied] = useState(false);
+        
+        const isCopyable = typeof content === 'string' || Array.isArray(content);
+        const textToCopy = isCopyable ? (Array.isArray(content) ? content.join(', ') : content) : '';
+
+        const handleCopy = () => {
+            if (!isCopyable) return;
+            navigator.clipboard.writeText(textToCopy);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        };
+
+        return (
+            <div className="bg-slate-800/50 p-6 rounded-lg shadow-lg relative transition-all duration-300 hover:shadow-indigo-accent/20 hover:scale-[1.02]">
+            <h3 className="text-lg font-semibold text-indigo-accent mb-3">{title}</h3>
+            {Array.isArray(content) ? (
+                <div className="flex flex-wrap gap-2">
+                {content.map((tag, index) => (
+                    <span key={index} className="bg-gray-blue/20 text-off-white text-sm font-medium px-3 py-1 rounded-full">
+                    {tag}
+                    </span>
+                ))}
+                </div>
+            ) : (typeof content === 'string' ? (
+                <p className="text-gray-blue whitespace-pre-wrap">{content}</p>
+                ) : (
+                content
+                )
+            )}
+            {isCopyable && (
+                <button
+                onClick={handleCopy}
+                className="absolute top-4 right-4 text-gray-blue hover:text-off-white transition-colors"
+                aria-label={`Copy ${title}`}
+                >
+                {copied ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-cta" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                )}
+                </button>
+            )}
+            </div>
+        );
+      };
+      // --- END: components/ResultCard.tsx ---
+
+      // --- START: App.tsx ---
+      const TitleOptions = ({ titles }) => {
+        const [copiedIndex, setCopiedIndex] = useState(null);
+
+        const handleCopy = (text, index) => {
+            navigator.clipboard.writeText(text);
+            setCopiedIndex(index);
+            setTimeout(() => setCopiedIndex(null), 2000);
+        };
+
+        return (
+            <ul className="space-y-3">
+            {titles.map((title, index) => (
+                <li key={index} className="flex items-center justify-between gap-3 bg-gray-blue/10 p-3 rounded-md">
+                <span className="text-gray-blue">{title}</span>
+                <button
+                    onClick={() => handleCopy(title, index)}
+                    className="text-gray-blue hover:text-off-white transition-colors flex-shrink-0"
+                    aria-label={`Copy title ${index + 1}`}
+                >
+                    {copiedIndex === index ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-cta" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    )}
+                </button>
+                </li>
+            ))}
+            </ul>
+        );
+      };
+
+
+      const App = () => {
+        const [topic, setTopic] = useState('');
+        const [generatedContent, setGeneratedContent] = useState(null);
+        const [thumbnailUrls, setThumbnailUrls] = useState([]);
+        const [isLoading, setIsLoading] = useState(false);
+        const [showInterstitial, setShowInterstitial] = useState(false);
+        const [error, setError] = useState(null);
+        const resultsRef = useRef(null);
+
+        const handleGenerate = useCallback(async () => {
+            if (!topic.trim()) {
+            setError('Please enter a video topic.');
+            return;
+            }
+            setIsLoading(true);
+            setError(null);
+            setGeneratedContent(null);
+            setThumbnailUrls([]);
+            setShowInterstitial(false);
+
+            try {
+            const textPromise = generateYouTubeContent(topic);
+            
+            const thumbnailPrompts = [
+                `A visually stunning and clickbait YouTube thumbnail for a video about "${topic}". High contrast, vibrant colors, clear subject, and engaging text.`,
+                `An aesthetic and cinematic YouTube thumbnail for a video about "${topic}". Minimalist design, professional typography, high-quality imagery.`,
+                `An engaging and informative graphic-style YouTube thumbnail for a video about "${topic}". Use icons, bold text overlays, and a clear visual hierarchy to convey the video's content.`,
+            ];
+
+            const imagePromises = thumbnailPrompts.map(prompt => generateThumbnail(prompt));
+
+            const [textContent, ...images] = await Promise.all([textPromise, ...imagePromises]);
+            
+            setGeneratedContent(textContent);
+            setThumbnailUrls(images);
+            setIsLoading(false);
+            setShowInterstitial(true);
+
+            setTimeout(() => {
+                setShowInterstitial(false);
+                setTimeout(() => {
+                    resultsRef.current?.scrollIntoView({ behavior: 'smooth' });
+                }, 100);
+            }, 2500);
+
+
+            } catch (e) {
+            setError(e instanceof Error ? e.message : 'An unknown error occurred.');
+            setIsLoading(false);
+            }
+        }, [topic]);
+
+        return (
+            <div className="min-h-screen bg-navy text-off-white font-sans flex flex-col items-center p-4 sm:p-8 transition-colors duration-500">
+            <main className="w-full max-w-4xl mx-auto flex flex-col items-center pt-8">
+
+                <h1 className="text-3xl sm:text-5xl font-bold text-center mt-4 bg-clip-text text-transparent bg-gradient-to-r from-off-white to-gray-blue">
+                YouTube SEO Content Generator
+                </h1>
+                <p className="text-gray-blue mt-4 text-center max-w-2xl">
+                Enter your video topic and let AI craft the perfect title, description, tags, and even generate unique thumbnail ideas to boost your channel's visibility.
+                </p>
+
+                <div className="w-full max-w-2xl mt-12">
+                <div className="flex flex-col sm:flex-row gap-4">
+                    <input
+                    type="text"
+                    value={topic}
+                    onChange={(e) => setTopic(e.target.value)}
+                    placeholder="e.g., 'How to bake a sourdough bread'"
+                    className="flex-grow bg-slate-800/50 text-off-white placeholder-gray-blue px-6 py-4 rounded-full border-2 border-transparent focus:border-indigo-accent focus:ring-0 focus:outline-none transition-all duration-300 shadow-lg"
+                    disabled={isLoading}
+                    onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
+                    />
+                    <button
+                    onClick={handleGenerate}
+                    disabled={isLoading}
+                    className="bg-green-cta text-white font-bold px-8 py-4 rounded-full shadow-lg hover:bg-green-500 disabled:bg-gray-500 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-105"
+                    >
+                    {isLoading ? 'Generating...' : 'Generate'}
+                    </button>
+                </div>
+                </div>
+
+                <div ref={resultsRef} className="w-full mt-16 transition-opacity duration-700 ease-in-out">
+                {isLoading && <Loader />}
+                {error && <p className="text-center text-red-400 bg-red-900/50 p-4 rounded-lg">{error}</p>}
+                
+                {showInterstitial && (
+                    <div className="flex flex-col items-center justify-center text-center p-8">
+                        <h2 className="text-3xl font-bold text-indigo-accent animate-pulse">
+                            Be Thankful to Lord Yogesh
+                        </h2>
+                    </div>
+                )}
+                
+                {generatedContent && !showInterstitial && (
+                    <div className="space-y-8 animate-fade-in">
+                    <div className="bg-slate-800/50 p-6 rounded-lg shadow-lg flex flex-col md:flex-row items-center justify-between gap-6">
+                        <div className="flex-grow">
+                            <h3 className="text-lg font-semibold text-indigo-accent mb-2">Overall SEO Score</h3>
+                            <p className="text-gray-blue">{generatedContent.scoreJustification}</p>
+                        </div>
+                        <SeoScore score={generatedContent.seoScore} />
+                    </div>
+                    
+                    <ResultCard title="Generated Title Options" content={<TitleOptions titles={generatedContent.titles} />} />
+                    <ResultCard title="Keyword Analysis" content={generatedContent.keywordAnalysis} />
+                    <ResultCard title="Generated Description" content={generatedContent.description} />
+                    <ResultCard title="Generated Tags" content={generatedContent.tags} />
+                    
+                    <div>
+                        <h3 className="text-lg font-semibold text-indigo-accent mb-3 text-center">AI-Generated Thumbnails</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                            {thumbnailUrls.map((url, index) => (
+                            <div key={index} className="group relative bg-slate-800/50 p-4 rounded-lg shadow-lg transition-all duration-300 hover:shadow-indigo-accent/20 hover:scale-105">
+                                <img src={url} alt={`Generated thumbnail ${index + 1}`} className="w-full h-auto rounded-md aspect-video object-cover" />
+                                <a
+                                href={url}
+                                download={`thumbnail-${topic.replace(/\s+/g, '-')}-${index + 1}.png`}
+                                className="absolute top-2 right-2 bg-green-cta/80 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                                aria-label="Download thumbnail"
+                                >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                </svg>
+                                </a>
+                            </div>
+                            ))}
+                        </div>
+                    </div>
+                    </div>
+                )}
+                </div>
+            </main>
+            
+            <footer className="w-full text-center mt-16 py-4">
+                <p className="text-gray-blue font-bold text-2xl animate-pulse bg-clip-text text-transparent bg-gradient-to-r from-indigo-accent via-green-cta to-indigo-accent">
+                Made By Your Dad, You Little Bitch!!!
+                </p>
+            </footer>
+            </div>
+        );
+      };
+      // --- END: App.tsx ---
+
+      // --- START: index.tsx ---
+      const rootElement = document.getElementById('root');
+      if (!rootElement) {
+        throw new Error("Could not find root element to mount to");
+      }
+
+      const root = ReactDOM.createRoot(rootElement);
+      root.render(
+        <React.StrictMode>
+          <App />
+        </React.StrictMode>
+      );
+      // --- END: index.tsx ---
+    </script>
   </body>
 </html>
