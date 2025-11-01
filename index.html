@@ -406,27 +406,22 @@
             setShowInterstitial(false);
 
             try {
-            const textPromise = generateYouTubeContent(topic, apiKey);
-            
-            const thumbnailPrompts = [
-                `A visually stunning and clickbait YouTube thumbnail for a video about "${topic}". High contrast, vibrant colors, clear subject, and engaging text.`,
-                `An aesthetic and cinematic YouTube thumbnail for a video about "${topic}". Minimalist design, professional typography, high-quality imagery.`,
-                `An engaging and informative graphic-style YouTube thumbnail for a video about "${topic}". Use icons, bold text overlays, and a clear visual hierarchy to convey the video's content.`,
-            ];
+                const textPromise = generateYouTubeContent(topic, apiKey);
+                
+                const thumbnailPrompt = `A visually stunning and clickbait YouTube thumbnail for a video about "${topic}". High contrast, vibrant colors, clear subject, and engaging text.`;
+                const imagePromise = generateThumbnail(thumbnailPrompt, apiKey);
 
-            const imagePromises = thumbnailPrompts.map(prompt => generateThumbnail(prompt, apiKey));
+                const [textContent, imageUrl] = await Promise.all([textPromise, imagePromise]);
+                
+                setGeneratedContent(textContent);
+                setThumbnailUrls([imageUrl]);
+                setIsLoading(false);
+                setShowInterstitial(true);
 
-            const [textContent, ...images] = await Promise.all([textPromise, ...imagePromises]);
-            
-            setGeneratedContent(textContent);
-            setThumbnailUrls(images);
-            setIsLoading(false);
-            setShowInterstitial(true);
-
-            setTimeout(() => {
-                setShowInterstitial(false);
-                setShowSuccessModal(true);
-            }, 2500);
+                setTimeout(() => {
+                    setShowInterstitial(false);
+                    setShowSuccessModal(true);
+                }, 2500);
 
 
             } catch (e) {
@@ -536,10 +531,10 @@
                   <ResultCard title="Generated Tags" content={generatedContent.tags} />
                   
                   <div>
-                      <h3 className="text-lg font-semibold text-indigo-accent mb-3 text-center">AI-Generated Thumbnails</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                      <h3 className="text-lg font-semibold text-indigo-accent mb-3 text-center">AI-Generated Thumbnail</h3>
+                      <div className="flex justify-center">
                           {thumbnailUrls.map((url, index) => (
-                          <div key={index} className="group relative bg-slate-800/50 p-4 rounded-lg shadow-lg transition-all duration-300 hover:shadow-indigo-accent/20 hover:scale-105">
+                          <div key={index} className="group relative bg-slate-800/50 p-4 rounded-lg shadow-lg transition-all duration-300 hover:shadow-indigo-accent/20 hover:scale-105 max-w-lg">
                               <img src={url} alt={`Generated thumbnail ${index + 1}`} className="w-full h-auto rounded-md aspect-video object-cover" />
                               <a
                               href={url}
