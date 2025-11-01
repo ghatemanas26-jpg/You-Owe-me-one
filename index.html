@@ -128,35 +128,6 @@
             throw new Error("Failed to generate text content. Please try again.");
         }
       }
-
-      async function generateThumbnail(prompt, apiKey) {
-        const ai = new GoogleGenAI({ apiKey });
-        try {
-            const response = await ai.models.generateImages({
-                model: 'imagen-4.0-generate-001',
-                prompt: prompt,
-                config: {
-                numberOfImages: 1,
-                outputMimeType: 'image/png',
-                aspectRatio: '16:9',
-                },
-            });
-            
-            if (response.generatedImages && response.generatedImages.length > 0) {
-            const base64ImageBytes = response.generatedImages[0].image.imageBytes;
-            return `data:image/png;base64,${base64ImageBytes}`;
-            } else {
-            throw new Error("No image was generated.");
-            }
-
-        } catch (error) {
-            console.error("Error generating thumbnail:", error);
-             if (error.message.includes('API key')) {
-                throw new Error("Invalid API Key: Failed to generate thumbnail image.");
-            }
-            throw new Error("Failed to generate thumbnail image. Please try again.");
-        }
-      }
       // --- END: services/geminiService.ts ---
 
       // --- START: components/Loader.tsx ---
@@ -364,7 +335,6 @@
       const App = () => {
         const [topic, setTopic] = useState('');
         const [generatedContent, setGeneratedContent] = useState(null);
-        const [thumbnailUrls, setThumbnailUrls] = useState([]);
         const [isLoading, setIsLoading] = useState(false);
         const [showInterstitial, setShowInterstitial] = useState(false);
         const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -402,19 +372,12 @@
             setIsLoading(true);
             setError(null);
             setGeneratedContent(null);
-            setThumbnailUrls([]);
             setShowInterstitial(false);
 
             try {
-                const textPromise = generateYouTubeContent(topic, apiKey);
-                
-                const thumbnailPrompt = `A visually stunning and clickbait YouTube thumbnail for a video about "${topic}". High contrast, vibrant colors, clear subject, and engaging text.`;
-                const imagePromise = generateThumbnail(thumbnailPrompt, apiKey);
-
-                const [textContent, imageUrl] = await Promise.all([textPromise, imagePromise]);
+                const textContent = await generateYouTubeContent(topic, apiKey);
                 
                 setGeneratedContent(textContent);
-                setThumbnailUrls([imageUrl]);
                 setIsLoading(false);
                 setShowInterstitial(true);
 
@@ -458,7 +421,7 @@
                 YouTube SEO Content Generator
                 </h1>
                 <p className="text-gray-blue mt-4 text-center max-w-2xl">
-                Enter your video topic and let AI craft the perfect title, description, tags, and even generate unique thumbnail ideas to boost your channel's visibility.
+                Enter your video topic and let AI craft the perfect title, description, and tags to boost your channel's visibility.
                 </p>
                 <p className="text-red-400 mt-4 text-2xl italic">made by your dad you little bitch</p>
                 <div className="mt-4">
@@ -529,27 +492,6 @@
                   <ResultCard title="Keyword Analysis" content={generatedContent.keywordAnalysis} />
                   <ResultCard title="Generated Description" content={generatedContent.description} />
                   <ResultCard title="Generated Tags" content={generatedContent.tags} />
-                  
-                  <div>
-                      <h3 className="text-lg font-semibold text-indigo-accent mb-3 text-center">AI-Generated Thumbnail</h3>
-                      <div className="flex justify-center">
-                          {thumbnailUrls.map((url, index) => (
-                          <div key={index} className="group relative bg-slate-800/50 p-4 rounded-lg shadow-lg transition-all duration-300 hover:shadow-indigo-accent/20 hover:scale-105 max-w-lg">
-                              <img src={url} alt={`Generated thumbnail ${index + 1}`} className="w-full h-auto rounded-md aspect-video object-cover" />
-                              <a
-                              href={url}
-                              download={`thumbnail-${topic.replace(/\s+/g, '-')}-${index + 1}.png`}
-                              className="absolute top-2 right-2 bg-green-cta/80 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                              aria-label="Download thumbnail"
-                              >
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                              </svg>
-                              </a>
-                          </div>
-                          ))}
-                      </div>
-                  </div>
                   </div>
               )}
               </div>
