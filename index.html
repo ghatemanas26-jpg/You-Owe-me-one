@@ -2,7 +2,6 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>YouTube SEO Content Generator</title>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -317,18 +316,24 @@
         const resultsRef = useRef(null);
 
         useEffect(() => {
-          const checkApiKey = async () => {
-            try {
-              if (window.aistudio && await window.aistudio.hasSelectedApiKey()) {
-                setIsKeyReady(true);
-              }
-            } catch (e) {
-              console.error("Error checking for API key:", e);
-            } finally {
-              setIsKeyLoading(false);
-            }
-          };
-          checkApiKey();
+            const checkApiKey = async () => {
+                setIsKeyLoading(true);
+                try {
+                    if (window.aistudio && (await window.aistudio.hasSelectedApiKey())) {
+                        setIsKeyReady(true);
+                    } else if (!window.aistudio) {
+                        // Not in AI Studio, assume key is in environment
+                        setIsKeyReady(true);
+                    }
+                } catch (e) {
+                    console.error("Error checking for API key:", e);
+                    // If there's an error (e.g. not in iframe), assume we should proceed
+                    setIsKeyReady(true);
+                } finally {
+                    setIsKeyLoading(false);
+                }
+            };
+            checkApiKey();
         }, []);
 
         const handleSelectKey = async () => {
@@ -382,9 +387,13 @@
 
             } catch (e) {
               const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
-              if (errorMessage.includes("API key not valid")) {
-                  setError("Your API Key is invalid. Please select a valid API key to continue.");
-                  setIsKeyReady(false);
+              if (errorMessage.toLowerCase().includes("api key")) {
+                  if (window.aistudio) {
+                      setError("Your API Key is invalid. Please select a valid API key to continue.");
+                      setIsKeyReady(false);
+                  } else {
+                      setError("An API key error occurred. Please ensure your API_KEY is correctly configured in your deployment environment.");
+                  }
               } else {
                   setError(errorMessage);
               }
